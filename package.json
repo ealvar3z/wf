@@ -1,0 +1,28 @@
+{
+    "name": "wf",
+    "version": "1.0.4",
+    "description": "A macOS CLI for bypassing captive portals on open Wi-Fi.",
+    "main": "main.js",
+    "bin": {
+        "wf": "./main.js"
+    },
+    "scripts": {
+        "start": "node ./main.js help",
+        "cli": "node ./main.js",
+        "check": "npm run check:main && npm run check:lib",
+        "check:main": "node --check ./main.js",
+        "check:lib": "npm run check:wf && npm run check:arp && npm run check:ping",
+        "check:wf": "node --check ./lib/wf.js",
+        "check:arp": "node --check ./lib/arp.js",
+        "check:ping": "node --check ./lib/ping.js"
+    },
+    "author": "ealvar3z",
+    "license": "MIT",
+    "dependencies": {
+        "default-gateway": "^6.0.1",
+        "ip": "github:ealvar3z/node-ip#v3.0.0",
+        "node-wifi": "^2.0.12",
+        "request": "^2.88.2",
+        "spoof": "^2.0.1"
+    }
+}

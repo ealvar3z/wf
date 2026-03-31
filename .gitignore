@@ -1,0 +1,66 @@
+node_modules/
+dist/
+coverage/
+.nyc_output/
+
+# Environment and local config
+.env
+.env.*
+!.env.example
+!.env.sample
+*.local
+.npmrc
+
+# Secrets and credentials
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.der
+*.csr
+*.ovpn
+*.kdbx
+*.asc
+*.gpg
+*.secret
+*.secrets
+*.token
+*.tokens
+*.credentials
+*.mobileprovision
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+
+# Logs and diagnostics
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.pid
+*.seed
+*.stackdump
+
+# Caches and temp files
+.cache/
+.eslintcache
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100/
+.Trashes/
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# Local editor settings
+.idea/
+.vscode/
