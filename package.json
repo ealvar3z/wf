@@ -20,9 +20,6 @@
     "license": "MIT",
     "dependencies": {
         "default-gateway": "^6.0.1",
-        "ip": "github:ealvar3z/node-ip#v3.0.0",
-        "node-wifi": "^2.0.12",
-        "request": "^2.88.2",
-        "spoof": "^2.0.1"
+        "ip": "github:ealvar3z/node-ip#v3.0.0"
     }
 }
