@@ -19,9 +19,12 @@ import (
 )
 
 const (
-	blockSize   = 255
-	successURL  = "http://www.apple.com/library/test/success.html"
-	successBody = "<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>"
+	blockSize       = 255
+	pingWaitMillis  = 150
+	pingWorkerCount = 32
+	wifiTogglePause = 250 * time.Millisecond
+	successURL      = "http://www.apple.com/library/test/success.html"
+	successBody     = "<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>"
 )
 
 type routeContext struct {
@@ -716,13 +719,45 @@ func pingScan(interfaceName string, blockCallback func() (bool, error)) (bool, e
 			end = len(hostIPs)
 		}
 		fmt.Println("Scanning next block of", blockSize)
-		for _, ip := range hostIPs[i:end] {
-			_ = ping(ip)
+		if err := pingBlock(hostIPs[i:end]); err != nil {
+			return false, err
 		}
 	}
 
 	fmt.Println("Scan complete.")
 	return false, nil
+}
+
+func pingBlock(hostIPs []string) error {
+	if len(hostIPs) == 0 {
+		return nil
+	}
+
+	workerCount := pingWorkerCount
+	if len(hostIPs) < workerCount {
+		workerCount = len(hostIPs)
+	}
+
+	jobs := make(chan string, len(hostIPs))
+	for _, ip := range hostIPs {
+		jobs <- ip
+	}
+	close(jobs)
+
+	done := make(chan struct{}, workerCount)
+	for range workerCount {
+		go func() {
+			for ip := range jobs {
+				_ = ping(ip)
+			}
+			done <- struct{}{}
+		}()
+	}
+
+	for range workerCount {
+		<-done
+	}
+	return nil
 }
 
 func cidrHosts(cidr string) ([]string, error) {
@@ -754,7 +789,16 @@ func cidrHosts(cidr string) ([]string, error) {
 }
 
 func ping(ip string) error {
-	_, err := execOutput("/sbin/ping", "-c", "1", ip)
+	_, err := execOutput(
+		"/sbin/ping",
+		"-c",
+		"1",
+		"-W",
+		strconv.Itoa(pingWaitMillis),
+		"-q",
+		"-n",
+		ip,
+	)
 	return err
 }
 
@@ -782,7 +826,7 @@ func tryMACs(attempted map[string]bool, initialSSID string,
 		}
 
 		fmt.Println("Trying MAC", mac)
-		if err := setInterfaceMAC(it.Device, mac); err != nil {
+		if err := setInterfaceMAC(it, mac); err != nil {
 			return false, err
 		}
 		attempted[mac] = true
@@ -872,7 +916,7 @@ func reset() error {
 	if err != nil {
 		return err
 	}
-	return setInterfaceMAC(it.Device, it.Address)
+	return setInterfaceMAC(it, it.Address)
 }
 
 func listHardwarePorts() ([]hardwarePort, error) {
@@ -938,12 +982,100 @@ func getCurrentMAC(device string) (string, error) {
 	return validateMAC(match[1])
 }
 
-func setInterfaceMAC(device, mac string) error {
+func setInterfaceMAC(it *hardwarePort, mac string) error {
 	normalizedMAC, err := validateMAC(mac)
 	if err != nil {
 		return err
 	}
-	_, err = execOutput("/sbin/ifconfig", device, "ether", normalizedMAC)
+
+	if err := trySetInterfaceMAC(it.Device, normalizedMAC); err == nil {
+		return nil
+	} else if !isWiFiPort(it) {
+		return err
+	}
+
+	poweredOn, err := isAirportPowerOn(it.Device)
+	if err != nil {
+		return err
+	}
+	if !poweredOn {
+		return trySetInterfaceMAC(it.Device, normalizedMAC)
+	}
+
+	if err := setAirportPower(it.Device, false); err != nil {
+		return err
+	}
+	time.Sleep(wifiTogglePause)
+
+	setErr := trySetInterfaceMAC(it.Device, normalizedMAC)
+	powerErr := setAirportPower(it.Device, true)
+	time.Sleep(wifiTogglePause)
+	if setErr != nil {
+		if powerErr != nil {
+			return fmt.Errorf("%v; restore power failed: %v", setErr, powerErr)
+		}
+		return setErr
+	}
+	if powerErr != nil {
+		return powerErr
+	}
+	return nil
+}
+
+func trySetInterfaceMAC(device, mac string) error {
+	_, err := execOutput("/sbin/ifconfig", device, "lladdr", mac)
+	if err == nil {
+		return nil
+	}
+
+	_, etherErr := execOutput("/sbin/ifconfig", device, "ether", mac)
+	if etherErr == nil {
+		return nil
+	}
+
+	if err != nil && etherErr != nil {
+		return fmt.Errorf(
+			"lladdr failed: %v; ether failed: %v",
+			err,
+			etherErr,
+		)
+	}
+	if err != nil {
+		return err
+	}
+	return etherErr
+}
+
+func isWiFiPort(it *hardwarePort) bool {
+	if it == nil {
+		return false
+	}
+	return strings.EqualFold(it.Port, "Wi-Fi")
+}
+
+func isAirportPowerOn(device string) (bool, error) {
+	stdout, err := execOutput(
+		"/usr/sbin/networksetup",
+		"-getairportpower",
+		device,
+	)
+	if err != nil {
+		return false, err
+	}
+	return strings.HasSuffix(strings.TrimSpace(stdout), ": On"), nil
+}
+
+func setAirportPower(device string, enabled bool) error {
+	state := "off"
+	if enabled {
+		state = "on"
+	}
+	_, err := execOutput(
+		"/usr/sbin/networksetup",
+		"-setairportpower",
+		device,
+		state,
+	)
 	return err
 }
 
